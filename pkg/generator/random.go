@@ -62,10 +62,17 @@ func (o RandomOpts) Size(s int) RandomOpts {
 	return o
 }
 
+// Static will enable static (repeating) data instead of random data.
+func (o RandomOpts) Static(s bool) RandomOpts {
+	o.static = s
+	return o
+}
+
 // RandomOpts are the options for the random data source.
 type RandomOpts struct {
-	seed *int64
-	size int
+	seed   *int64
+	size   int
+	static bool
 }
 
 func randomOptsDefaults() RandomOpts {
@@ -77,11 +84,13 @@ func randomOptsDefaults() RandomOpts {
 }
 
 type randomSrc struct {
-	source  *rng.Reader
-	rng     *rand.Rand
-	obj     Object
-	o       Options
-	counter atomic.Uint64
+	source     *rng.Reader
+	staticSrc  *staticReader
+	rng        *rand.Rand
+	obj        Object
+	o          Options
+	counter    atomic.Uint64
+	useStatic  bool
 }
 
 func newRandom(o Options) (Source, error) {
@@ -98,14 +107,10 @@ func newRandom(o Options) (Source, error) {
 		return nil, fmt.Errorf("size must be >= 0, got %d", size)
 	}
 
-	input, err := rng.NewReader(rng.WithRNG(rand.New(rndSrc)), rng.WithSize(o.totalSize))
-	if err != nil {
-		return nil, err
-	}
 	r := randomSrc{
-		o:      o,
-		rng:    rand.New(rndSrc),
-		source: input,
+		o:         o,
+		rng:       rand.New(rndSrc),
+		useStatic: o.random.static,
 		obj: Object{
 			Reader:      nil,
 			Name:        "",
@@ -113,6 +118,19 @@ func newRandom(o Options) (Source, error) {
 			Size:        0,
 		},
 	}
+
+	if o.random.static {
+		// Create static reader that repeats a fixed byte pattern
+		r.staticSrc = newStaticReader(size)
+	} else {
+		// Use random data generator
+		input, err := rng.NewReader(rng.WithRNG(rand.New(rndSrc)), rng.WithSize(o.totalSize))
+		if err != nil {
+			return nil, err
+		}
+		r.source = input
+	}
+
 	r.obj.setPrefix(o)
 	return &r, nil
 }
@@ -124,17 +142,27 @@ func (r *randomSrc) Object() *Object {
 	r.obj.Size = r.o.getSize(r.rng)
 	r.obj.setName(fmt.Sprintf("%d.%s.rnd", n, string(nBuf[:])))
 
-	// Reset scrambler
-	r.source.ResetSize(r.obj.Size)
-	r.obj.Reader = r.source
+	if r.useStatic {
+		// Reset static reader to the new size
+		r.staticSrc.ResetSize(r.obj.Size)
+		r.obj.Reader = r.staticSrc
+	} else {
+		// Reset scrambler
+		r.source.ResetSize(r.obj.Size)
+		r.obj.Reader = r.source
+	}
 	return &r.obj
 }
 
 func (r *randomSrc) String() string {
-	if r.o.randSize {
-		return fmt.Sprintf("Random data; random size up to %d bytes", r.o.totalSize)
+	dataType := "Random data"
+	if r.useStatic {
+		dataType = "Static data"
 	}
-	return fmt.Sprintf("Random data; %d bytes total", r.o.totalSize)
+	if r.o.randSize {
+		return fmt.Sprintf("%s; random size up to %d bytes", dataType, r.o.totalSize)
+	}
+	return fmt.Sprintf("%s; %d bytes total", dataType, r.o.totalSize)
 }
 
 func (r *randomSrc) Prefix() string {

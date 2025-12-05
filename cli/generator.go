@@ -41,6 +41,10 @@ var genFlags = []cli.Flag{
 		Name:  "obj.randsize",
 		Usage: "Randomize size of objects so they will be up to the specified size",
 	},
+	cli.BoolFlag{
+		Name:  "obj.static",
+		Usage: "Use static (repeating) data instead of random data for PUT operations",
+	},
 }
 
 // newGenSource returns a new generator
@@ -92,7 +96,7 @@ func newGenSource(ctx *cli.Context, sizeField string) func() generator.Source {
 			fatalIf(probe.NewError(fmt.Errorf("unexpected obj.size specified: %s", ctx.String(sizeField))), "Invalid obj.size parameter")
 		}
 
-		opts = append([]generator.Option{g.Apply()}, append(opts, generator.WithRandomSize(ctx.Bool("obj.randsize")))...)
+		opts = append([]generator.Option{g.Apply()}, append(opts, generator.WithRandomSize(ctx.Bool("obj.randsize")), generator.WithStaticData(ctx.Bool("obj.static")))...)
 	}
 
 	src, err := generator.NewFn(opts...)
