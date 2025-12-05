@@ -147,3 +147,11 @@ func WithPrefixSize(n int) Option {
 		return nil
 	}
 }
+
+// WithStaticData enables static (repeating) data instead of random data.
+func WithStaticData(b bool) Option {
+	return func(o *Options) error {
+		o.random.static = b
+		return nil
+	}
+}
